@@ -1,0 +1,142 @@
+#!/bin/bash
+# httpd        Startup script for the Apache HTTP Server
+# chkconfig: 345 99 1
+# description: Apache is a World Wide Web server.  It is used to serve \
+#              HTML files and CGI.
+# processname: httpd
+# config: /home/apache-myse/conf/httpd.conf
+# pidfile: /home/apache-myse/logs/httpd.pid
+# note :
+#       the capital 'rp_instancename' parameter is automatically replaced with
+#       the instancename if the newrp_<mpm-type> script is used for creation.
+
+REVERSEPROXY=myse
+
+# You can use this variable to add supplementary parameters to
+# the httpd at startup.
+# We need to specify the adequate config file
+OPTIONS=" -f /home/apache-${REVERSEPROXY}/conf/httpd.conf "
+
+# Source function library.
+. /etc/rc.d/init.d/functions
+
+# Start httpd in the C locale by default.
+#export LANG=C
+HTTPD_LANG=${HTTPD_LANG-"C"}
+
+
+# This will prevent initlog from swallowing up a pass-phrase prompt if
+# mod_ssl needs a pass-phrase from the user.
+INITLOG_ARGS=""
+
+# Path to the apachectl script, server binary, and short-form for messages.
+#Watch the Sbin for apachectl : this is an instance-specific file
+apachectl=/home/apache-${REVERSEPROXY}/sbin/apachectl
+httpd=${HTTPD-/home/apache-${REVERSEPROXY}/bin/httpd}
+prog=httpd
+pidfile=${PIDFILE-/home/apache-${REVERSEPROXY}/logs/httpd.pid}
+lockfile=${LOCKFILE-/home/apache-${REVERSEPROXY}/logs/httpd.lock}
+RETVAL=0
+
+start()
+{
+        echo -n "Starting $prog for ${REVERSEPROXY}: "
+        LANG=$HTTPD_LANG $apachectl $OPTIONS -k start >> /home/apache-${REVERSEPROXY}/logs/init.log 2>&1
+        RETVAL=$?
+        [ $RETVAL = 0 ] && touch ${lockfile} && echo_success
+        [ $RETVAL != 0 ] && echo_failure
+        echo
+        return $RETVAL
+}
+
+stop()
+{
+        echo -n "Stopping $prog for ${REVERSEPROXY}: "
+        #$apachectl $OPTIONS -k graceful-stop >> /home/apache-${REVERSEPROXY}/logs/init.log 2>&1
+        $apachectl $OPTIONS -k stop >> /home/apache-${REVERSEPROXY}/logs/init.log 2>&1
+        RETVAL=$?
+        [ $RETVAL = 0 ] && rm -f ${lockfile} ${pidfile} && echo_success
+        [ $RETVAL != 0 ] && echo_failure
+        echo
+}
+
+reload()
+{
+        echo -n "Reloading $prog for ${REVERSEPROXY}: "
+        if [ ! LANG=$HTTPD_LANG $apachectl $OPTIONS -t >&/dev/null ]
+        then
+                RETVAL=$?
+                echo "not reloading due to configuration syntax error"
+                failure "not reloading $httpd ${REVERSEPROXY} due to conf. syntax error"
+        else
+                killproc $httpd -HUP
+                RETVAL=$?
+        fi
+        echo
+}
+
+# See how we were called.
+case $1 in
+   start)
+        start
+        ;;
+
+   stop)
+        stop
+        ;;
+
+   status)
+        ps -ef | grep  $httpd | grep -v "$$" | \
+                awk 'BEGIN{i=0;}
+                {if (i==0) { list="(" }; list=list" "$2; i+=1;}
+                END{if (i>0) {end=" )"}else{end=""};  print i" processes running for RP instance '$REVERSEPROXY' "list end"."}'
+        RETVAL=$?
+        ;;
+
+   graceful|graceful-stop)
+        $apachectl $OPTIONS -k $1
+        RETVAL=$?
+        ;;
+
+   restart)
+        echo -n "Restarting $prog for ${REVERSEPROXY}: "
+        stop
+        start
+        ;;
+
+   condrestart)
+        if [ -f ${pidfile} ]
+        then
+                stop
+                start
+        fi
+        ;;
+
+   reload)
+        echo -n "Reloading $prog for ${REVERSEPROXY}: "
+        reload
+        ;;
+
+   fullstat|stat)
+        $apachectl ${1}us
+        RETVAL=$?
+        ;;
+
+   -h|help)
+
+        echo "$0 supported args are :"
+        echo $"Usage: $0 {start|stop|restart|condrestart|reload|status|fullstat|gracef|configtest|-h|help}"
+        echo
+        echo "you can pass one of the following args directly to apachectl :"
+        $apachectl -h | awk '/ -/ {print $0}'
+        RETVAL=1
+        ;;
+
+   *)
+        $apachectl $OPTIONS $@
+        RETVAL=$?
+        ;;
+esac
+
+exit $RETVAL
+
